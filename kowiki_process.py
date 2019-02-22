@@ -1,3 +1,4 @@
+import nltk
 import argparse
 
 parser = argparse.ArgumentParser(description='file path')
@@ -7,9 +8,13 @@ args = parser.parse_args()
 wiki_path = args.wiki_path
 out_path = args.out_path
 
+class kowiki_process:
+	def __init__(self):
+		try:
+			nltk.tokenize.sent_tokenize('test')
+		except:
+			nltk.download('punkt')
 
-
-class wiki_process:
 	
 	def find_consecutive_false_index(self, word_length, consecutive_short_line_threshold):
 		# F(K 단어 미만을 보유한 문장)가 consecutive_short_line_threshold 이상인 인덱스만 체크 
@@ -44,7 +49,7 @@ class wiki_process:
 	def process(self, wiki_path, out_path):
 		short_line_threshold = 11 # short_line_threshold 이상은 T, 미만은 F
 		consecutive_short_line_threshold = 5 # consecutive_short_line_threshold 이상이면 지움.
-		line_threshold = 2
+		line_threshold = 3
 
 		with open(wiki_path, 'r', encoding='utf-8') as f, open(out_path, 'w', encoding='utf-8') as o:
 
@@ -91,10 +96,14 @@ class wiki_process:
 							# 이제 연속된 짧은 문장들을 제외하고 새로 씀.
 							new_len = end-start+1 
 							if new_len >= line_threshold: 
-								new_line = ' '.join(paragraph[start:end+1])+'\n'
-								o.write(new_line)
+								paragraph = ' '.join(paragraph[start:end+1])
+								sentence_tokenize = nltk.tokenize.sent_tokenize(paragraph)
+								for sentence in sentence_tokenize:
+									o.write(sentence+'\n')
+								o.write('\n')
+								#o.write(new_line)
 	
-					else:
+					else: # paragraph part
 						if is_previous_doc == True: # 제목 제외.
 							is_previous_doc = False
 						else:
@@ -102,7 +111,7 @@ class wiki_process:
 							word_length.append(len(line.split())>=short_line_threshold)
 
 
-wp = wiki_process()
+wp = kowiki_process()
 wp.process(wiki_path, out_path)
 #wp.find_consecutive_false_index([True, True, False, False, True, False, False, True, True, False, False, False], 3)
 #wp.find_consecutive_false_index([False, True, False, False, True, False, False, True, True, False, False, False], 3)
