@@ -8,233 +8,6 @@ class data_helper:
 		self.zero_sentence_paragraph_index = []
 		print(self.total_token_num)
 
-
-	def init_bucket_dict(self, bucket_size):
-		bucket_dict = {}
-		for bucket in bucket_size:
-			bucket_dict[bucket] = {
-					'dataset':[], 
-					'is_next_target':[], 
-					'A_B_boundary':[],
-					'boolean_mask':[],
-					'masked_LM_target':[],
-					'num':0
-				}		
-		return bucket_dict
-
-
-	def list_flatten(self, data):
-		flatten = []
-		for i in data:
-			flatten += i
-		return flatten
-
-	def get_sentence_from_paragraph(self, paragraph_index, token_length=512, min_first_sentence_length=3, min_second_sentence_length=5):
-		first = []
-		second = []
-
-		paragraph = self.data[paragraph_index]
-		paragraph_length = len(paragraph)
-		
-		cumulative_length = np.zeros(paragraph_length) # 각 index별로 누적된 길이 저장 # [0]: 0~0, [1]: 0~1, [K]: 0~K
-		cumulative_length[0] = len(paragraph[0])
-		for sentence_index in range(1, paragraph_length):
-			current_sentence_length = len(paragraph[sentence_index])
-			cumulative_length[sentence_index] = current_sentence_length + cumulative_length[sentence_index-1]
-
-			use_one_sentence = np.random.randint(1, 4) # 66% 확률로 한문장만 사용
-			if use_one_sentence <= 2 or sentence_index == 1:
-				first_sentence = paragraph[sentence_index-1]
-				first_sentence_length = len(first_sentence)
-				if first_sentence_length + 3 + min_second_sentence_length > token_length or first_sentence_length < min_first_sentence_length:
-					continue
-
-				second_sentence = paragraph[sentence_index]
-				second_sentence_length = len(second_sentence)
-				if second_sentence_length < min_second_sentence_length:
-					continue
-
-				if first_sentence_length + second_sentence_length + 3 > token_length:
-					# 5% 정도는 second_sentence를 slice해서 씀.
-					is_second_sentence_slice = np.random.randint(1, 101)
-					if is_second_sentence_slice <= 5: # 5% 
-						second_sentence = second_sentence[:token_length-3-first_sentence_length]
-					else:
-						continue
-
-
-			else: # 여러문장을 하나의 문장으로 취급
-				if cumulative_length[sentence_index] + 3 <= token_length: # 누적 길이가 조건을 만족하는경우
-					first_sentence_last_index = np.random.randint(0, sentence_index) 
-					first_sentence = self.list_flatten(paragraph[:first_sentence_last_index+1]) 
-					first_sentence_length = len(first_sentence)
-					if first_sentence_length + 3 + min_second_sentence_length > token_length or first_sentence_length < min_first_sentence_length:
-						continue
-
-					second_sentence = self.list_flatten(paragraph[first_sentence_last_index+1:sentence_index+1])
-					second_sentence_length = len(second_sentence)
-					if second_sentence_length < min_second_sentence_length:
-						continue
-
-
-				else: # 누적 길이가 조건보다 긴 경우: 잘라야함.
-					# [0, sentence_index-2] => cumulative_length[sentence_index] - cumulative_length[sentence_index-2]: len[sentence_index-1]+len[sentence_index]
-					possible_index = []
-					for cum_index in range(sentence_index-1): 
-						length_check = cumulative_length[sentence_index] - cumulative_length[cum_index]
-						if length_check + 3 <= token_length:
-							possible_index.append(cum_index+1) # cum_index+1 부터 사용해야 위 조건을 만족한다는 뜻.
-					possible_index_length = len(possible_index)
-		
-					# 만족하는것이 없는 경우 5%의 확률로 한문장씩 쓰고, second sentence는 slice해서 씀.
-					if possible_index_length == 0:
-						is_second_sentence_slice = np.random.randint(1, 101)
-						if is_second_sentence_slice <= 5: # 5% 
-							first_sentence = paragraph[sentence_index-1]
-							first_sentence_length = len(first_sentence)
-							if first_sentence_length + 3 + min_second_sentence_length > token_length or first_sentence_length < min_first_sentence_length:
-								continue
-
-							second_sentence = paragraph[sentence_index]
-							second_sentence_length = len(second_sentence)
-							if second_sentence_length < min_second_sentence_length:
-								continue
-
-							second_sentence = second_sentence[:token_length-3-first_sentence_length]
-						
-						else:
-							continue
-
-
-					else:
-						first_sentence_start_index = np.random.choice(possible_index, 1)[0]
-						first_sentence_last_index = np.random.randint(first_sentence_start_index, sentence_index)
-						first_sentence = self.list_flatten(paragraph[first_sentence_start_index : first_sentence_last_index+1]) 
-						first_sentence_length = len(first_sentence)
-						if first_sentence_length + 3 + min_second_sentence_length > token_length or first_sentence_length < min_first_sentence_length:
-							continue
-
-						second_sentence = self.list_flatten(paragraph[first_sentence_last_index+1 : sentence_index+1])
-						second_sentence_length = len(second_sentence)
-						if second_sentence_length < min_second_sentence_length:
-							continue
-
-
-			if len(second_sentence) < min_second_sentence_length:
-				print('second error')
-			if len(first_sentence) < min_first_sentence_length:
-				print('first error')
-
-			# 이 라인에 온다는 것은 모든 조건을 만족했다는 것.
-			first.append(first_sentence)
-			second.append(second_sentence)
-	
-		return first, second
-		'''
-		for first_sentence, second_sentence in zip(first, second):
-			print(len(first_sentence), len(second_sentence), len(first_sentence)+len(second_sentence)+3)
-			# 문장들 다 1자로 펴고, 길이 합 + 3 한게 512보다 큰 상황 발생하는지 확인하자.						
-			if len(first_sentence) == 0:
-				print('first_sentence_length is 0')
-			if len(second_sentence) == 0:
-				print('second_sentence_length is 0')
-			if len(first_sentence) + len(second_sentence) + 3 > 512:
-				print('longer than 512', 'first', len(first_sentence), 'second', len(second_sentence), 'first+second+3', len(first_sentence) + len(second_sentence) + 3)
-
-		'''
-
-	def make_is_next_task(self, second_sentence, first_sentence_length, current_paragraph_index, 
-				total_paragraph_num, min_second_sentence_length=5, token_length=512):
-
-		# for is_next sentence prediction
-		is_next = np.random.randint(0, 2) # 0: not next, 1: next
-		if is_next == 0: # not next
-			#print(token_length)
-			while True:
-				other_paragraph_index = self.exclusive_randint(
-						min_val=0, 
-						max_val=total_paragraph_num, 
-						exclusive_vals=[current_paragraph_index]+self.zero_sentence_paragraph_index
-					)
-				other_first, other_second = self.get_sentence_from_paragraph(
-						other_paragraph_index, 
-						token_length=token_length,
-						min_first_sentence_length=min_second_sentence_length,
-						min_second_sentence_length=min_second_sentence_length
-					)
-				if len(other_first):
-					break
-				else:
-					self.zero_sentence_paragraph_index.append(other_paragraph_index)
-					#count+=1
-					#print('hi', count)
-
-			other_sentences = other_first + other_second
-			possible_other_sentence_index = []
-			for other_sentence_index, other_sentence in enumerate(other_sentences):
-				if len(other_sentence) + first_sentence_length + 3 <= token_length: 
-					possible_other_sentence_index.append(other_sentence_index)
-		
-			if len(possible_other_sentence_index): #길이를 만족하는것이 있는 경우
-				second_sentence = other_sentences[np.random.choice(possible_other_sentence_index, 1)[0]]
-		
-			else: # 길이를 만족하는 것이 없으면 아무 문장이나 선택하고 원본 second_sentence 길이로 slice.
-				random_other_sentence_index = np.random.randint(0, len(other_sentences))
-				second_sentence = other_sentences[random_other_sentence_index][:len(second_sentence)] #[:token_length-3-first_sentence_length]
-
-		return second_sentence, is_next
-
-
-
-
-	def make_mask_task(self, first_sentence, second_sentence):
-		mask_0 = 0
-		mask_1 = 0
-		mask_2 = 0
-		
-		# for masked language model task
-		concat_sentences_for_mask = np.array(first_sentence+second_sentence, dtype=np.int32)
-		concat_sentences_for_mask_length = len(concat_sentences_for_mask) 
-		
-		mask_position = np.random.randint(1, 101, size=len(concat_sentences_for_mask)) <= 15 # 1~15 즉 15%는 마스킹.
-		mask_method = np.random.randint(1, 11, size=sum(mask_position)) # 1~8: mask token, 9: change random token, 10: keep token
-
-		mask_target = concat_sentences_for_mask[mask_position]
-		new_token_of_mask_position = np.zeros_like(mask_target)
-
-		for mask_method_index, mask in enumerate(mask_method):
-			if mask <= 8: # 1~8: mask token
-				new_token_of_mask_position[mask_method_index] = self.bpe2idx['</MASK>']
-				mask_0 += 1
-			elif mask == 9: # 9: change random token
-				new_token_of_mask_position[mask_method_index] = self.exclusive_randint(
-						min_val=0, 
-						max_val=len(self.bpe2idx), 
-						exclusive_vals=[mask_target[mask_method_index], self.bpe2idx['</PAD>'], self.bpe2idx['</UNK>'], self.bpe2idx['</CLS>'], self.bpe2idx['</SEP>'], self.bpe2idx['</MASK>']]
-					)
-				mask_1 += 1
-			else: # 10: keep token
-				new_token_of_mask_position[mask_method_index] = mask_target[mask_method_index]
-				mask_2 += 1
-
-		# token update
-		concat_sentences_for_mask[mask_position] = new_token_of_mask_position
-
-		# make dataset
-		first_sentence_length = len(first_sentence)
-		masked_first_sentence = concat_sentences_for_mask[:first_sentence_length]
-		mask_of_first_sentence = mask_position[:first_sentence_length]
-		masked_second_sentence = concat_sentences_for_mask[first_sentence_length:]
-		mask_of_second_sentence = mask_position[first_sentence_length:]
-
-		complete_sentence = np.concatenate(
-				([self.bpe2idx['</CLS>']], masked_first_sentence, [self.bpe2idx['</SEP>']], masked_second_sentence, [self.bpe2idx['</SEP>']])
-			)
-		complete_mask = np.concatenate(
-				([False], mask_of_first_sentence, [False], mask_of_second_sentence, [False])
-			)
-
-		return complete_sentence, complete_mask, mask_target, mask_0, mask_1, mask_2
 	
 
 
@@ -684,6 +457,247 @@ class data_helper:
 		plt.plot(range(0, len(513)), len_check)
 		plt.show()
 		'''
+
+	def init_bucket_dict(self, bucket_size):
+		bucket_dict = {}
+		for bucket in bucket_size:
+			bucket_dict[bucket] = {
+					'dataset':[], 
+					'is_next_target':[], 
+					'A_B_boundary':[],
+					'boolean_mask':[],
+					'masked_LM_target':[],
+					'num':0
+				}		
+		return bucket_dict
+
+
+	def list_flatten(self, data):
+		flatten = []
+		for i in data:
+			flatten += i
+		return flatten
+
+	def get_sentence_from_paragraph(self, paragraph_index, token_length=512, min_first_sentence_length=3, min_second_sentence_length=5):
+		first = []
+		second = []
+
+		paragraph = self.data[paragraph_index]
+		paragraph_length = len(paragraph)
+		
+		cumulative_length = np.zeros(paragraph_length) # 각 index별로 누적된 길이 저장 # [0]: 0~0, [1]: 0~1, [K]: 0~K
+		cumulative_length[0] = len(paragraph[0])
+		for sentence_index in range(1, paragraph_length):
+			current_sentence_length = len(paragraph[sentence_index])
+			cumulative_length[sentence_index] = current_sentence_length + cumulative_length[sentence_index-1]
+
+			use_one_sentence = np.random.randint(1, 4) # 66% 확률로 한문장만 사용
+			if use_one_sentence <= 2 or sentence_index == 1:
+				first_sentence = paragraph[sentence_index-1]
+				first_sentence_length = len(first_sentence)
+				if first_sentence_length + 3 + min_second_sentence_length > token_length or first_sentence_length < min_first_sentence_length:
+					continue
+
+				second_sentence = paragraph[sentence_index]
+				second_sentence_length = len(second_sentence)
+				if second_sentence_length < min_second_sentence_length:
+					continue
+
+				if first_sentence_length + second_sentence_length + 3 > token_length:
+					# 5% 정도는 second_sentence를 slice해서 씀.
+					is_second_sentence_slice = np.random.randint(1, 101)
+					if is_second_sentence_slice <= 5: # 5% 
+						second_sentence = second_sentence[:token_length-3-first_sentence_length]
+					else:
+						continue
+
+
+			else: # 여러문장을 하나의 문장으로 취급
+				if cumulative_length[sentence_index] + 3 <= token_length: # 누적 길이가 조건을 만족하는경우
+					first_sentence_last_index = np.random.randint(0, sentence_index) 
+					first_sentence = self.list_flatten(paragraph[:first_sentence_last_index+1]) 
+					first_sentence_length = len(first_sentence)
+					if first_sentence_length + 3 + min_second_sentence_length > token_length or first_sentence_length < min_first_sentence_length:
+						continue
+
+					second_sentence = self.list_flatten(paragraph[first_sentence_last_index+1:sentence_index+1])
+					second_sentence_length = len(second_sentence)
+					if second_sentence_length < min_second_sentence_length:
+						continue
+
+
+				else: # 누적 길이가 조건보다 긴 경우: 잘라야함.
+					# [0, sentence_index-2] => cumulative_length[sentence_index] - cumulative_length[sentence_index-2]: len[sentence_index-1]+len[sentence_index]
+					possible_index = []
+					for cum_index in range(sentence_index-1): 
+						length_check = cumulative_length[sentence_index] - cumulative_length[cum_index]
+						if length_check + 3 <= token_length:
+							possible_index.append(cum_index+1) # cum_index+1 부터 사용해야 위 조건을 만족한다는 뜻.
+					possible_index_length = len(possible_index)
+		
+					# 만족하는것이 없는 경우 5%의 확률로 한문장씩 쓰고, second sentence는 slice해서 씀.
+					if possible_index_length == 0:
+						is_second_sentence_slice = np.random.randint(1, 101)
+						if is_second_sentence_slice <= 5: # 5% 
+							first_sentence = paragraph[sentence_index-1]
+							first_sentence_length = len(first_sentence)
+							if first_sentence_length + 3 + min_second_sentence_length > token_length or first_sentence_length < min_first_sentence_length:
+								continue
+
+							second_sentence = paragraph[sentence_index]
+							second_sentence_length = len(second_sentence)
+							if second_sentence_length < min_second_sentence_length:
+								continue
+
+							second_sentence = second_sentence[:token_length-3-first_sentence_length]
+						
+						else:
+							continue
+
+
+					else:
+						first_sentence_start_index = np.random.choice(possible_index, 1)[0]
+						first_sentence_last_index = np.random.randint(first_sentence_start_index, sentence_index)
+						first_sentence = self.list_flatten(paragraph[first_sentence_start_index : first_sentence_last_index+1]) 
+						first_sentence_length = len(first_sentence)
+						if first_sentence_length + 3 + min_second_sentence_length > token_length or first_sentence_length < min_first_sentence_length:
+							continue
+
+						second_sentence = self.list_flatten(paragraph[first_sentence_last_index+1 : sentence_index+1])
+						second_sentence_length = len(second_sentence)
+						if second_sentence_length < min_second_sentence_length:
+							continue
+
+
+			if len(second_sentence) < min_second_sentence_length:
+				print('second error')
+			if len(first_sentence) < min_first_sentence_length:
+				print('first error')
+
+			# 이 라인에 온다는 것은 모든 조건을 만족했다는 것.
+			first.append(first_sentence)
+			second.append(second_sentence)
+	
+		return first, second
+		'''
+		for first_sentence, second_sentence in zip(first, second):
+			print(len(first_sentence), len(second_sentence), len(first_sentence)+len(second_sentence)+3)
+			# 문장들 다 1자로 펴고, 길이 합 + 3 한게 512보다 큰 상황 발생하는지 확인하자.						
+			if len(first_sentence) == 0:
+				print('first_sentence_length is 0')
+			if len(second_sentence) == 0:
+				print('second_sentence_length is 0')
+			if len(first_sentence) + len(second_sentence) + 3 > 512:
+				print('longer than 512', 'first', len(first_sentence), 'second', len(second_sentence), 'first+second+3', len(first_sentence) + len(second_sentence) + 3)
+
+		'''
+
+	def make_is_next_task(self, second_sentence, first_sentence_length, current_paragraph_index, 
+				total_paragraph_num, min_second_sentence_length=5, token_length=512):
+
+		# for is_next sentence prediction
+		is_next = np.random.randint(0, 2) # 0: not next, 1: next
+		if is_next == 0: # not next
+			#print(token_length)
+			while True:
+				other_paragraph_index = self.exclusive_randint(
+						min_val=0, 
+						max_val=total_paragraph_num, 
+						exclusive_vals=[current_paragraph_index]+self.zero_sentence_paragraph_index
+					)
+				other_first, other_second = self.get_sentence_from_paragraph(
+						other_paragraph_index, 
+						token_length=token_length,
+						min_first_sentence_length=min_second_sentence_length,
+						min_second_sentence_length=min_second_sentence_length
+					)
+				if len(other_first):
+					break
+				else:
+					self.zero_sentence_paragraph_index.append(other_paragraph_index)
+					#count+=1
+					#print('hi', count)
+
+			other_sentences = other_first + other_second
+			possible_other_sentence_index = []
+			for other_sentence_index, other_sentence in enumerate(other_sentences):
+				if len(other_sentence) + first_sentence_length + 3 <= token_length: 
+					possible_other_sentence_index.append(other_sentence_index)
+		
+			if len(possible_other_sentence_index): #길이를 만족하는것이 있는 경우
+				second_sentence = other_sentences[np.random.choice(possible_other_sentence_index, 1)[0]]
+		
+			else: # 길이를 만족하는 것이 없으면 아무 문장이나 선택하고 원본 second_sentence 길이로 slice.
+				random_other_sentence_index = np.random.randint(0, len(other_sentences))
+				second_sentence = other_sentences[random_other_sentence_index][:len(second_sentence)] #[:token_length-3-first_sentence_length]
+
+		return second_sentence, is_next
+
+
+
+
+	def make_mask_task(self, first_sentence, second_sentence):
+		mask_0 = 0
+		mask_1 = 0
+		mask_2 = 0
+		
+		# for masked language model task
+		concat_sentences_for_mask = np.array(first_sentence+second_sentence, dtype=np.int32)
+		concat_sentences_for_mask_length = len(concat_sentences_for_mask) 
+		
+		mask_position = np.random.randint(1, 101, size=len(concat_sentences_for_mask)) <= 15 # 1~15 즉 15%는 마스킹.
+		mask_method = np.random.randint(1, 11, size=sum(mask_position)) # 1~8: mask token, 9: change random token, 10: keep token
+
+		mask_target = concat_sentences_for_mask[mask_position]
+		new_token_of_mask_position = np.zeros_like(mask_target)
+
+		for mask_method_index, mask in enumerate(mask_method):
+			if mask <= 8: # 1~8: mask token
+				new_token_of_mask_position[mask_method_index] = self.bpe2idx['</MASK>']
+				mask_0 += 1
+			elif mask == 9: # 9: change random token
+				new_token_of_mask_position[mask_method_index] = self.exclusive_randint(
+						min_val=0, 
+						max_val=len(self.bpe2idx), 
+						exclusive_vals=[mask_target[mask_method_index], self.bpe2idx['</PAD>'], self.bpe2idx['</UNK>'], self.bpe2idx['</CLS>'], self.bpe2idx['</SEP>'], self.bpe2idx['</MASK>']]
+					)
+				mask_1 += 1
+			else: # 10: keep token
+				new_token_of_mask_position[mask_method_index] = mask_target[mask_method_index]
+				mask_2 += 1
+
+		# token update
+		concat_sentences_for_mask[mask_position] = new_token_of_mask_position
+
+		# make dataset
+		first_sentence_length = len(first_sentence)
+		masked_first_sentence = concat_sentences_for_mask[:first_sentence_length]
+		mask_of_first_sentence = mask_position[:first_sentence_length]
+		masked_second_sentence = concat_sentences_for_mask[first_sentence_length:]
+		mask_of_second_sentence = mask_position[first_sentence_length:]
+
+		complete_sentence = np.concatenate(
+				([self.bpe2idx['</CLS>']], masked_first_sentence, [self.bpe2idx['</SEP>']], masked_second_sentence, [self.bpe2idx['</SEP>']])
+			)
+		complete_mask = np.concatenate(
+				([False], mask_of_first_sentence, [False], mask_of_second_sentence, [False])
+			)
+
+		return complete_sentence, complete_mask, mask_target, mask_0, mask_1, mask_2
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 	def get_batch_data(self, token_length=512):
 		'''TODO
