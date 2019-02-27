@@ -8,7 +8,46 @@ class data_helper:
 		self.zero_sentence_paragraph_index = []
 		print(self.total_token_num)
 
+
+	def get_batch_dataset(self, bucket_size=[], token_length=512, min_first_sentence_length=3, min_second_sentence_length=5, batch_size=128, dataset_shuffle=False):
+		# dataset_shuffle: data_list 셔플 
+
+		bucket_dataset = self.get_dataset(
+				bucket_size = bucket_size,
+				token_length = token_length,
+				min_first_sentence_length = min_first_sentence_length,
+				min_second_sentence_length = min_second_sentence_length,
+			) 
 	
+		data_list = []
+		for bucket in bucket_dataset:
+			for i in range( int(np.ceil(len(bucket_dataset[bucket]['dataset'])/batch_size)) ):
+				
+				# [batch_size, token_length]
+				batch_dataset = bucket_dataset[bucket]['dataset'][batch_size * i: batch_size * (i + 1)] 
+
+				# [batch_size, token_length]
+				batch_boolean_mask = bucket_dataset[bucket]['boolean_mask'][batch_size * i: batch_size * (i + 1)] 
+
+				# [batch_size]
+				batch_is_next_target = bucket_dataset[bucket]['is_next_target'][batch_size * i: batch_size * (i + 1)] 
+
+				# [batch_size]
+				batch_A_B_boundary = bucket_dataset[bucket]['A_B_boundary'][batch_size * i: batch_size * (i + 1)] 
+
+				# [# mask]
+				batch_masked_LM_target = []
+				for mask in bucket_dataset[bucket]['masked_LM_target'][batch_size * i: batch_size * (i + 1)]:
+					batch_masked_LM_target += mask.tolist()
+				batch_masked_LM_target = np.array(batch_masked_LM_target)
+
+				data_list.append([batch_dataset, batch_boolean_mask, batch_is_next_target, batch_A_B_boundary, batch_masked_LM_target])
+
+
+		if dataset_shuffle is True:
+			np.random.shuffle(data_list)
+		return data_list
+
 
 
 	# change name (sampling)
@@ -27,6 +66,9 @@ class data_helper:
 		#print(paragraph_num)
 		count = 0
 		for paragraph_index in tqdm(range(paragraph_num), ncols=50):
+			#if paragraph_index ==100:
+			#	break
+
 			first, second = self.get_sentence_from_paragraph(
 					paragraph_index, 
 					token_length=token_length,
@@ -69,7 +111,7 @@ class data_helper:
 				
 				for bucket in bucket_size:
 					if complete_sentence_length <= bucket:
-						'''
+						
 						complete_sentence = np.pad(
 								complete_sentence, 
 								(0, bucket-complete_sentence_length), 
@@ -88,15 +130,15 @@ class data_helper:
 						bucket_dict[bucket]['boolean_mask'].append(complete_mask)
 						bucket_dict[bucket]['masked_LM_target'].append(mask_target)
 						total_data += 1
-						'''
+						
 						bucket_dict[bucket]['num'] += 1
 						break
 
 
 
 
-		for index, i in enumerate(len_check):
-			print(index, i)
+		#for index, i in enumerate(len_check):
+		#	print(index, i)
 		print('total_data:', total_data)
 		print('total_token:', total_token, '\tmask_token(12%):', mask_0, '\tchange_token(1.5%):', mask_1, '\tkeep_token(1.5%):', mask_2)
 		print('12%_of_total_token:', total_token*0.12, '\t1.5%_of_total_token:', total_token*0.015)
@@ -106,7 +148,7 @@ class data_helper:
 		import matplotlib.pyplot as plt
 		plt.plot(range(0, 513), len_check)
 		plt.show()
-	
+		return bucket_dict
 
 	def init_bucket_dict(self, bucket_size):
 		bucket_dict = {}
@@ -337,18 +379,58 @@ class data_helper:
 
 
 
+	def exclusive_randint(self, min_val, max_val, exclusive_vals):
+		while True:
+			randint = np.random.randint(min_val, max_val)
+			if randint not in exclusive_vals:
+				break
+		return randint
+
+
+	def make_voca(self, voca_path):
+		bpe2idx = {'</PAD>':0, '</UNK>':1, '</CLS>':2, '</SEP>':3, '</MASK>':4}
+		idx2bpe = ['</PAD>', '</UNK>', '</CLS>', '</SEP>', '</MASK>']
+		idx = 5
+
+		with open(voca_path, 'r', encoding='utf-8') as f:
+			for bpe_voca in f:
+				bpe_voca = bpe_voca.strip()
+				if bpe_voca:
+					bpe_voca = bpe_voca.split()[0] # 1은 freq
+					bpe2idx[bpe_voca] = idx
+					idx += 1
+					idx2bpe.append(bpe_voca)
+
+		return bpe2idx, idx2bpe
+
+	def data_read(self, data_path, bpe2idx):
+		total_token_num = 0
+
+		data = []
+		paragraph = []
+		with open(data_path, 'r', encoding='utf-8') as f:
+			for line in f:
+				line = line.strip()
+				if line:
+					idx = []
+					tokens = line.split()
+					for token in tokens:
+						total_token_num += 1
+						if token in bpe2idx:
+							idx.append(bpe2idx[token])
+						else:
+							idx.append(bpe2idx['</UNK>'])
+					paragraph.append(idx)
+
+				else: # next line is new paragraph
+					data.append(paragraph)
+					paragraph = []
+
+		return data, total_token_num
 
 
 
-
-
-
-
-
-
-
-
-
+	"""
 	def get_batch_data(self, token_length=512):
 		'''TODO
 		data는 같은 paragraph끼리 같은 라인에 있음.
@@ -491,53 +573,4 @@ class data_helper:
 		print('total_token:', total_token, '\tmask_token(12%):', mask_0, '\tchange_token(1.5%):', mask_1, '\tkeep_token(1.5%):', mask_2)
 		print('12%_of_total_token:', total_token*0.12, '\t1.5%_of_total_token:', total_token*0.015)
 		return np.array(dataset, dtype=np.int32), np.array(boolean_mask, dtype=np.bool), masked_LM_target, np.array(is_next_target, dtype=np.int32), np.array(A_B_boundary, dtype=np.int32)
-
-
-	def exclusive_randint(self, min_val, max_val, exclusive_vals):
-		while True:
-			randint = np.random.randint(min_val, max_val)
-			if randint not in exclusive_vals:
-				break
-		return randint
-
-
-	def make_voca(self, voca_path):
-		bpe2idx = {'</PAD>':0, '</UNK>':1, '</CLS>':2, '</SEP>':3, '</MASK>':4}
-		idx2bpe = ['</PAD>', '</UNK>', '</CLS>', '</SEP>', '</MASK>']
-		idx = 5
-
-		with open(voca_path, 'r', encoding='utf-8') as f:
-			for bpe_voca in f:
-				bpe_voca = bpe_voca.strip()
-				if bpe_voca:
-					bpe_voca = bpe_voca.split()[0] # 1은 freq
-					bpe2idx[bpe_voca] = idx
-					idx += 1
-					idx2bpe.append(bpe_voca)
-
-		return bpe2idx, idx2bpe
-
-	def data_read(self, data_path, bpe2idx):
-		total_token_num = 0
-
-		data = []
-		paragraph = []
-		with open(data_path, 'r', encoding='utf-8') as f:
-			for line in f:
-				line = line.strip()
-				if line:
-					idx = []
-					tokens = line.split()
-					for token in tokens:
-						total_token_num += 1
-						if token in bpe2idx:
-							idx.append(bpe2idx[token])
-						else:
-							idx.append(bpe2idx['</UNK>'])
-					paragraph.append(idx)
-
-				else: # next line is new paragraph
-					data.append(paragraph)
-					paragraph = []
-
-		return data, total_token_num
+	"""
