@@ -5,17 +5,28 @@ import os
 import warnings
 import numpy as np
 from tqdm import tqdm
+import argparse
+import math
 
 warnings.filterwarnings('ignore')
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
 
-saver_path = './saver/'
-tensorboard_path = './tensorboard/'
 
-data_path='./DATA/bpe_out/BPE_kowiki'
-voca_path='./DATA/bpe_out/BPE_voca'
+parser = argparse.ArgumentParser(description='tensorboard path')
+parser.add_argument('-data_path', help="data_path", required=True)
+parser.add_argument('-voca_path', help="voca_path", required=True)
+parser.add_argument('-tensorboard_path', required=True)
+parser.add_argument('-save_path', help="save_path", required=True)
+parser.add_argument('-restore', default=0, type=int)
+args = parser.parse_args()
 
-data_helper = bert_data_helper.data_helper(data_path, voca_path)
+#save_path = './saver/'
+#tensorboard_path = './tensorboard/'
+
+#data_path='./DATA/bpe_out/BPE_kowiki'
+#voca_path='./DATA/bpe_out/BPE_voca'
+
+data_helper = bert_data_helper.data_helper(args.data_path, args.voca_path)
 
 
 def get_lr(step_num, init_lr=1e-4, warmup_step=10000, num_train_step=100001, power=1):
@@ -48,7 +59,7 @@ def train(model, epoch, data):
 	total_iter = len(data)
 	for i in tqdm(range( total_iter ), ncols=50):
 		step_num = ((epoch-1)*total_iter)+(i+1)
-		lr = get_lr(step_num=step_num, init_lr=1e-4) # epoch: [1, @], i:[0, total_iter)
+		lr = get_lr(step_num=step_num, warmup_step=40000 ,num_train_step=400001 ,init_lr=1e-4) # epoch: [1, @], i:[0, total_iter)
 		batch_dataset, batch_boolean_mask, batch_is_next_target, batch_A_B_boundary, batch_masked_LM_target = data[i]
 		
 		#print('current bucket size', len(batch_dataset[0]))
@@ -63,6 +74,12 @@ def train(model, epoch, data):
 					model.keep_prob:0.9 # dropout rate = 0.1		
 				}
 			)
+		if math.isnan(train_loss):
+			print('nan', len(batch_masked_LM_target))
+			print('target_max', batch_masked_LM_target.max())
+			print('target_min', batch_masked_LM_target.min())
+			print('mask_max', batch_dataset[batch_boolean_mask].max())
+			print('mask_min', batch_dataset[batch_boolean_mask].min(), '\n')
 
 		loss += train_loss
 	print('lr', lr)
@@ -103,7 +120,7 @@ def test(model, data):
 def run(model, data_helper, batch_size, token_length, bucket, dataset_shuffle=True, restore=0):
 	if restore != 0:
 		print('restore:', restore)
-		model.saver.restore(sess, saver_path+str(restore)+".ckpt")
+		saver.restore(sess, os.path.join(args.save_path, str(restore)+".ckpt"))
 	
 
 	with tf.name_scope("tensorboard"):
@@ -116,36 +133,45 @@ def run(model, data_helper, batch_size, token_length, bucket, dataset_shuffle=Tr
 		is_next_summary = tf.summary.scalar("is_next_accuracy", is_next_accuracy_tensorboard)
 				
 		merged = tf.summary.merge_all()
-		writer = tf.summary.FileWriter(tensorboard_path, sess.graph)
+		writer = tf.summary.FileWriter(args.tensorboard_path, sess.graph)
 
-	if not os.path.exists(saver_path):
+	if not os.path.exists(args.save_path):
 		print("create save directory")
-		os.makedirs(saver_path)
+		os.makedirs(args.save_path)
 	
-	# 결과 보고 for문 안으로 집어넣고 테스트하자.
-	data = data_helper.get_batch_dataset(
-			bucket_size=[i*bucket for i in range(1, token_length//bucket +1)], 
-			token_length=token_length,#512, 
-			min_first_sentence_length=3, 
-			min_second_sentence_length=5, 
-			batch_size=batch_size, 
-			dataset_shuffle=dataset_shuffle
-		)
+
 	for epoch in range(restore+1, 200+1):
+	# 결과 보고 for문 안으로 집어넣고 테스트하자.
+		data = data_helper.get_batch_dataset(
+				bucket_size=[i*bucket for i in range(1, token_length//bucket +1)], 
+				token_length=token_length,#512, 
+				min_first_sentence_length=3, 
+				min_second_sentence_length=5, 
+				batch_size=batch_size, 
+				dataset_shuffle=dataset_shuffle
+			)
+
+
+
+		print("epoch:", epoch)
+
 		#train 
 		train_loss = train(model, epoch, data)
-		masked_LM_accuracy, is_next_accuracy = test(model, data)
+		print('train_loss:', train_loss) 
 		
 		#save
-		model.saver.save(sess, saver_path+str(epoch)+".ckpt")
-		print("epoch:", epoch)
-		print('train_loss:', train_loss) 
+		saver.save(sess, os.path.join(args.save_path, str(epoch)+".ckpt"))
+		
+		masked_LM_accuracy, is_next_accuracy = test(model, data)
+		
 		print('masked_LM_accuracy:', masked_LM_accuracy) 
 		print('is_next_accuracy:', is_next_accuracy)
 		print()
 
 		#tensorboard
-		summary = sess.run(merged, {
+		summary = sess.run(
+				merged, 
+				{
 					train_loss_tensorboard:train_loss, 
 					masked_LM_accuracy_tensorboard:masked_LM_accuracy,
 					is_next_accuracy_tensorboard:is_next_accuracy, 
@@ -177,9 +203,11 @@ print('l2_weight_decay:', l2_weight_decay)
 print('label_smoothing:', label_smoothing)
 print()
 
-sess = tf.Session()
+config = tf.ConfigProto()
+config.gpu_options.allow_growth=True # gpu 필요한만큼만 할당.
+sess = tf.Session(config=config)
+
 model = bert.Bert(
-		sess = sess,
 		voca_size = len(bpe2idx), 
 		embedding_size = embedding_size, 
 		is_embedding_scale = True, 
@@ -190,16 +218,18 @@ model = bert.Bert(
 		l2_weight_decay = l2_weight_decay,
 		label_smoothing=label_smoothing
 	)
+sess.run(tf.global_variables_initializer())
+saver = tf.train.Saver(max_to_keep=10000)
 
 print('run')
 run(
 		model, 
 		data_helper, 
-		batch_size = 128, 
+		batch_size = 80, 
 		token_length = 128, 
 		bucket = 32, 
 		dataset_shuffle=True, 
-		restore=0
+		restore=args.restore
 	)
 
 

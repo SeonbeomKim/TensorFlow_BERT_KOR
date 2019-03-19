@@ -8,10 +8,9 @@ import os
 #tf.set_random_seed(787)
 
 class Bert:
-	def __init__(self, sess, voca_size, embedding_size, is_embedding_scale,	stack, 
+	def __init__(self, voca_size, embedding_size, is_embedding_scale,	stack, 
 			multihead_num, pad_idx, max_sequence_length, l2_weight_decay, label_smoothing):
 		
-		self.sess = sess
 		self.voca_size = voca_size
 		self.embedding_size = embedding_size
 		self.is_embedding_scale = is_embedding_scale # True or False
@@ -125,8 +124,8 @@ class Bert:
 			grads_and_vars = optimizer.compute_gradients(self.train_cost + l2_norm)
 			#https://www.tensorflow.org/api_docs/python/tf/clip_by_norm
 			clip_grads_and_vars = [(tf.clip_by_norm(gv[0], 1.0), gv[1]) for gv in grads_and_vars]
-			self.minimize = optimizer.apply_gradients(clip_grads_and_vars)
-			#self.minimize = optimizer.minimize(self.train_cost + l2_norm)
+			#self.minimize = optimizer.apply_gradients(clip_grads_and_vars)
+			self.minimize = optimizer.minimize(self.train_cost + l2_norm)
 
 
 
@@ -140,10 +139,7 @@ class Bert:
 					tf.cast(tf.equal(self.is_next_pred_argmax, self.is_next_target), tf.int32)
 				)
 
-		with tf.name_scope("saver"):
-			self.saver = tf.train.Saver(max_to_keep=10000)
 		
-		sess.run(tf.global_variables_initializer())
 		'''
 		for i in variables:
 			if 'LayerNorm' not in i.name and 'bias' not in i.name  and 'embedding' not in i.name:
@@ -169,7 +165,7 @@ class Bert:
 				) # [N, self.encoder_input_length, self.embedding_size] 
 
 		if self.is_embedding_scale is True:
-			embedding *= tf.sqrt(self.embedding_size)
+			embedding *= self.embedding_size ** 0.5
 
 		# Add Position embedding and Segement embedding
 		embedding += (PE + SE) # [N, self.encoder_input_length, self.embedding_size]

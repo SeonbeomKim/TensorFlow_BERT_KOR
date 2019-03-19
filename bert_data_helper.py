@@ -6,7 +6,7 @@ class data_helper:
 		self.bpe2idx, self.idx2bpe = self.make_voca(voca_path)
 		self.data, self.total_token_num = self.data_read(data_path, self.bpe2idx)
 		self.zero_sentence_paragraph_index = []
-		print(self.total_token_num)
+		print('# total_token of original data', self.total_token_num)
 
 
 	def get_batch_dataset(self, bucket_size=[], token_length=512, min_first_sentence_length=3, min_second_sentence_length=5, batch_size=128, dataset_shuffle=False):
@@ -24,22 +24,34 @@ class data_helper:
 			for i in range( int(np.ceil(len(bucket_dataset[bucket]['dataset'])/batch_size)) ):
 				
 				# [batch_size, token_length]
-				batch_dataset = bucket_dataset[bucket]['dataset'][batch_size * i: batch_size * (i + 1)] 
+				batch_dataset = np.array(
+						bucket_dataset[bucket]['dataset'][batch_size * i: batch_size * (i + 1)], 
+						dtype=np.int32
+					) 
 
 				# [batch_size, token_length]
-				batch_boolean_mask = bucket_dataset[bucket]['boolean_mask'][batch_size * i: batch_size * (i + 1)] 
+				batch_boolean_mask = np.array(
+						bucket_dataset[bucket]['boolean_mask'][batch_size * i: batch_size * (i + 1)],
+						dtype=np.bool
+					)
 
 				# [batch_size]
-				batch_is_next_target = bucket_dataset[bucket]['is_next_target'][batch_size * i: batch_size * (i + 1)] 
+				batch_is_next_target = np.array(
+						bucket_dataset[bucket]['is_next_target'][batch_size * i: batch_size * (i + 1)],
+						dtype=np.int32
+					)
 
 				# [batch_size]
-				batch_A_B_boundary = bucket_dataset[bucket]['A_B_boundary'][batch_size * i: batch_size * (i + 1)] 
+				batch_A_B_boundary = np.array(
+						bucket_dataset[bucket]['A_B_boundary'][batch_size * i: batch_size * (i + 1)],
+						dtype=np.int32
+					)
 
 				# [# mask]
 				batch_masked_LM_target = []
 				for mask in bucket_dataset[bucket]['masked_LM_target'][batch_size * i: batch_size * (i + 1)]:
 					batch_masked_LM_target += mask.tolist()
-				batch_masked_LM_target = np.array(batch_masked_LM_target)
+				batch_masked_LM_target = np.array(batch_masked_LM_target, dtype=np.int32)
 
 				data_list.append([batch_dataset, batch_boolean_mask, batch_is_next_target, batch_A_B_boundary, batch_masked_LM_target])
 
@@ -103,7 +115,6 @@ class data_helper:
 				mask_1 += one
 				mask_2 += two
 				total_token += (len(complete_sentence)-3)
-				total_data += 1
 				len_check[len(complete_sentence)] += 1
 
 				complete_sentence_length = len(complete_sentence)
@@ -129,7 +140,6 @@ class data_helper:
 						bucket_dict[bucket]['A_B_boundary'].append(first_sentence_length+2) # A position is CLS || first_sentence || SEP
 						bucket_dict[bucket]['boolean_mask'].append(complete_mask)
 						bucket_dict[bucket]['masked_LM_target'].append(mask_target)
-						total_data += 1
 						
 						bucket_dict[bucket]['num'] += 1
 						break
@@ -145,9 +155,9 @@ class data_helper:
 		for i in bucket_dict:
 			print(i, bucket_dict[i]['num'])
 
-		import matplotlib.pyplot as plt
-		plt.plot(range(0, 513), len_check)
-		plt.show()
+		#import matplotlib.pyplot as plt
+		#plt.plot(range(0, 513), len_check)
+		#plt.show()
 		return bucket_dict
 
 	def init_bucket_dict(self, bucket_size):
@@ -338,6 +348,7 @@ class data_helper:
 		concat_sentences_for_mask_length = len(concat_sentences_for_mask) 
 		
 		mask_position = np.random.randint(1, 101, size=len(concat_sentences_for_mask)) <= 15 # 1~15 즉 15%는 마스킹.
+		mask_position[concat_sentences_for_mask==self.bpe2idx['</UNK>']] = False # UNK 인 부분은 맞추는게 의미가 없으므로 제외
 		mask_method = np.random.randint(1, 11, size=sum(mask_position)) # 1~8: mask token, 9: change random token, 10: keep token
 
 		mask_target = concat_sentences_for_mask[mask_position]
